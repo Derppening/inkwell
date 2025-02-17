@@ -23,10 +23,10 @@ use llvm_sys::core::{
 use llvm_sys::core::{LLVMBuildCall, LLVMBuildInvoke};
 #[llvm_versions(15..)]
 use llvm_sys::core::{LLVMBuildCall2, LLVMBuildInvoke2};
-#[cfg(feature = "typed-pointers")]
+#[cfg(all(feature = "typed-pointers", not(feature = "llvm16-0")))]
 #[cfg_attr(feature = "llvm15-0", allow(deprecated))]
 use llvm_sys::core::{LLVMBuildGEP, LLVMBuildInBoundsGEP, LLVMBuildLoad, LLVMBuildPtrDiff, LLVMBuildStructGEP};
-#[cfg(not(feature = "typed-pointers"))]
+#[cfg(any(not(feature = "typed-pointers"), feature = "llvm16-0"))]
 use llvm_sys::core::{LLVMBuildGEP2, LLVMBuildInBoundsGEP2, LLVMBuildLoad2, LLVMBuildPtrDiff2, LLVMBuildStructGEP2};
 #[llvm_versions(8..)]
 use llvm_sys::core::{LLVMBuildIntCast2, LLVMBuildMemCpy, LLVMBuildMemMove, LLVMBuildMemSet};
@@ -977,9 +977,19 @@ impl<'ctx> Builder<'ctx> {
 
         let mut index_values: Vec<LLVMValueRef> = ordered_indexes.iter().map(|val| val.as_value_ref()).collect();
 
+        #[cfg(not(feature = "llvm16-0"))]
         #[cfg_attr(feature = "llvm15-0", allow(deprecated))]
         let value = LLVMBuildGEP(
             self.builder,
+            ptr.as_value_ref(),
+            index_values.as_mut_ptr(),
+            index_values.len() as u32,
+            c_string.as_ptr(),
+        );
+        #[cfg(feature = "llvm16-0")]
+        let value = LLVMBuildGEP2(
+            self.builder,
+            ptr.get_type().get_element_type().as_type_ref(),
             ptr.as_value_ref(),
             index_values.as_mut_ptr(),
             index_values.len() as u32,
@@ -1035,9 +1045,19 @@ impl<'ctx> Builder<'ctx> {
 
         let mut index_values: Vec<LLVMValueRef> = ordered_indexes.iter().map(|val| val.as_value_ref()).collect();
 
+        #[cfg(not(feature = "llvm16-0"))]
         #[cfg_attr(feature = "llvm15-0", allow(deprecated))]
         let value = LLVMBuildInBoundsGEP(
             self.builder,
+            ptr.as_value_ref(),
+            index_values.as_mut_ptr(),
+            index_values.len() as u32,
+            c_string.as_ptr(),
+        );
+        #[cfg(feature = "llvm16-0")]
+        let value = LLVMBuildInBoundsGEP2(
+            self.builder,
+            ptr.get_type().get_element_type().as_type_ref(),
             ptr.as_value_ref(),
             index_values.as_mut_ptr(),
             index_values.len() as u32,
@@ -1138,8 +1158,19 @@ impl<'ctx> Builder<'ctx> {
 
         let c_string = to_c_str(name);
 
+        #[cfg(not(feature = "llvm16-0"))]
         #[cfg_attr(feature = "llvm15-0", allow(deprecated))]
         let value = unsafe { LLVMBuildStructGEP(self.builder, ptr.as_value_ref(), index, c_string.as_ptr()) };
+        #[cfg(feature = "llvm16-0")]
+        let value = unsafe {
+            LLVMBuildStructGEP2(
+                self.builder,
+                ptr.get_type().get_element_type().as_type_ref(),
+                ptr.as_value_ref(),
+                index,
+                c_string.as_ptr(),
+            )
+        };
 
         unsafe { Ok(PointerValue::new(value)) }
     }
@@ -1257,6 +1288,7 @@ impl<'ctx> Builder<'ctx> {
             return Err(BuilderError::UnsetPosition);
         }
         let c_string = to_c_str(name);
+        #[cfg(not(feature = "llvm16-0"))]
         #[cfg_attr(feature = "llvm15-0", allow(deprecated))]
         let value = unsafe {
             LLVMBuildPtrDiff(
@@ -1265,6 +1297,24 @@ impl<'ctx> Builder<'ctx> {
                 rhs_ptr.as_value_ref(),
                 c_string.as_ptr(),
             )
+        };
+        #[cfg(feature = "llvm16-0")]
+        let value = {
+            if lhs_ptr.get_type().as_basic_type_enum() != rhs_ptr.get_type().as_basic_type_enum() {
+                return Err(BuilderError::ValueTypeMismatch(
+                    "The values must have the same pointer type.",
+                ));
+            }
+
+            unsafe {
+                LLVMBuildPtrDiff2(
+                    self.builder,
+                    lhs_ptr.get_type().get_element_type().as_type_ref(),
+                    lhs_ptr.as_value_ref(),
+                    rhs_ptr.as_value_ref(),
+                    c_string.as_ptr(),
+                )
+            }
         };
 
         unsafe { Ok(IntValue::new(value)) }
@@ -1415,8 +1465,18 @@ impl<'ctx> Builder<'ctx> {
         }
         let c_string = to_c_str(name);
 
+        #[cfg(not(feature = "llvm16-0"))]
         #[cfg_attr(feature = "llvm15-0", allow(deprecated))]
         let value = unsafe { LLVMBuildLoad(self.builder, ptr.as_value_ref(), c_string.as_ptr()) };
+        #[cfg(feature = "llvm16-0")]
+        let value = unsafe {
+            LLVMBuildLoad2(
+                self.builder,
+                ptr.get_type().get_element_type().as_type_ref(),
+                ptr.as_value_ref(),
+                c_string.as_ptr(),
+            )
+        };
 
         unsafe { Ok(BasicValueEnum::new(value)) }
     }
